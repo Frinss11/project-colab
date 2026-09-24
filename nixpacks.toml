@@ -1,3 +1,4 @@
+# trigger deploy
 [phases.setup]
 nixPkgs = ["php84", "php84Extensions.pdo_mysql", "php84Extensions.mbstring", "php84Extensions.openssl", "php84Extensions.gd", "composer", "nodejs"]
 
