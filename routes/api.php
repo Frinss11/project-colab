@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', [BankSoalApiController::class, 'index'])->name('api.index');
 
 Route::post('/login', [BankSoalApiController::class, 'login']);
+Route::post('/auth/login', [BankSoalApiController::class, 'login']);
 Route::post('/teacher/login', [BankSoalApiController::class, 'loginTeacher']);
 Route::post('/student/login', [BankSoalApiController::class, 'loginStudent']);
 
