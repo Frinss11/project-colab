@@ -19,7 +19,6 @@ class AuthApiController extends Controller
         ]);
 
         $user = User::where('email', $credentials['email'])->first();
-
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Kredensial tidak valid.'],
