@@ -75,3 +75,21 @@ it('student can login, view package list, and submit answers', function () {
         ->assertJsonPath('data.score', 100)
         ->assertJsonPath('data.jawaban_benar', 1);
 });
+
+it('student can register through public api endpoint', function () {
+    $response = $this->postJson('/api/register', [
+        'name' => 'Siswa Baru',
+        'email' => 'siswa.baru@example.com',
+        'password' => 'password123',
+        'password_confirmation' => 'password123',
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('data.user.role', 'siswa');
+
+    $this->assertDatabaseHas('users', [
+        'email' => 'siswa.baru@example.com',
+        'role' => 'siswa',
+    ]);
+});

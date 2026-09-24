@@ -29,6 +29,8 @@ class BankSoalApiController extends Controller
                 'base_url' => url('/api'),
                 'endpoints' => [
                     'POST /api/login' => 'Login umum (admin/guru/siswa)',
+                    'POST /api/register' => 'Register publik untuk siswa',
+                    'POST /api/auth/login' => 'Alias login umum',
                     'POST /api/teacher/login' => 'Login khusus guru/admin',
                     'POST /api/student/login' => 'Login khusus siswa',
                     'GET /api/me' => 'Ambil data user yang sedang login',
@@ -50,6 +52,39 @@ class BankSoalApiController extends Controller
                 ],
             ],
         ], 200);
+    }
+
+    public function register(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'role' => ['nullable', Rule::in(['siswa', 'student'])],
+        ]);
+
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'role' => $validated['role'] ?? 'siswa',
+        ]);
+
+        $token = $user->createToken('mobile-app')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Registrasi siswa berhasil.',
+            'data' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                ],
+                'token' => $token,
+            ],
+        ], 201);
     }
 
     public function login(Request $request)
