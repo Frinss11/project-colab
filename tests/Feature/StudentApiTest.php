@@ -93,3 +93,24 @@ it('student can register through public api endpoint', function () {
         'role' => 'siswa',
     ]);
 });
+
+it('logout revokes all user tokens so stale sessions cannot stay active', function () {
+    $user = User::factory()->create([
+        'role' => 'siswa',
+        'password' => Hash::make('password123'),
+    ]);
+
+    $firstToken = $user->createToken('mobile-app')->plainTextToken;
+    $secondToken = $user->createToken('mobile-app')->plainTextToken;
+
+    $this->withHeader('Authorization', 'Bearer '.$firstToken)
+        ->postJson('/api/logout')
+        ->assertOk()
+        ->assertJsonPath('success', true);
+
+    $user->refresh();
+
+    expect($user->tokens()->count())->toBe(0)
+        ->and($this->withHeader('Authorization', 'Bearer '.$firstToken)->getJson('/api/me')->status())->toBe(401)
+        ->and($this->withHeader('Authorization', 'Bearer '.$secondToken)->getJson('/api/me')->status())->toBe(401);
+});

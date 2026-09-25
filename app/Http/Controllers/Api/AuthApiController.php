@@ -25,6 +25,7 @@ class AuthApiController extends Controller
             ]);
         }
 
+        $user->tokens()->delete();
         $token = $user->createToken('mobile-app')->plainTextToken;
 
         return response()->json([
@@ -66,7 +67,14 @@ class AuthApiController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+
+        if ($user) {
+            $user->tokens()->delete();
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->json([
             'success' => true,
@@ -96,6 +104,7 @@ class AuthApiController extends Controller
             ], 403);
         }
 
+        $user->tokens()->delete();
         $token = $user->createToken('mobile-app')->plainTextToken;
 
         return response()->json([

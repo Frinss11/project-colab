@@ -128,7 +128,14 @@ class BankSoalApiController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()?->currentAccessToken()?->delete();
+        $user = $request->user();
+
+        if ($user) {
+            $user->tokens()->delete();
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->json([
             'success' => true,
@@ -605,6 +612,7 @@ class BankSoalApiController extends Controller
 
     private function buildLoginResponse(User $user)
     {
+        $user->tokens()->delete();
         $token = $user->createToken('mobile-app')->plainTextToken;
 
         return response()->json([
