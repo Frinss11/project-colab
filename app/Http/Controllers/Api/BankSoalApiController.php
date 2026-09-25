@@ -36,6 +36,9 @@ class BankSoalApiController extends Controller
                     'GET /api/me' => 'Ambil data user yang sedang login',
                     'POST /api/logout' => 'Logout token Sanctum',
                     'GET /api/admin/dashboard' => 'Dashboard admin/guru',
+                    'GET /api/admin/inventory' => 'Daftar inventory mapel',
+                    'GET /api/admin/inventory/{mapel}' => 'Detail inventory mapel',
+                    'POST /api/admin/inventory' => 'Simpan atau update inventory mapel',
                     'GET /api/admin/mapels' => 'Daftar mata pelajaran',
                     'POST /api/admin/mapels' => 'Tambah mapel',
                     'GET /api/admin/packages' => 'Daftar package',
@@ -147,6 +150,80 @@ class BankSoalApiController extends Controller
                 'total_guru' => User::whereIn('role', ['admin', 'guru'])->count(),
                 'recent_packages' => PackageModel::with(['mapel'])->withCount('soal')->latest()->limit(8)->get(),
             ],
+        ], 200);
+    }
+
+    public function inventory()
+    {
+        $this->ensureTeacher();
+
+        $inventory = Tambah_mapelModel::with('inventory')->get()->map(function ($mapel) {
+            return [
+                'mapel_id' => $mapel->id,
+                'nama_mapel' => $mapel->nama_mapel,
+                'kode_mapel' => $mapel->kode_mapel,
+                'jumlah_soal' => $mapel->inventory?->jumlah_soal ?? 0,
+                'tingkat_kesulitan' => $mapel->inventory?->tingkat_kesulitan,
+                'semester' => $mapel->inventory?->semester,
+                'inventory' => $mapel->inventory,
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $inventory,
+        ], 200);
+    }
+
+    public function showInventory(Tambah_mapelModel $mapel)
+    {
+        $this->ensureTeacher();
+
+        $mapel->load('inventory');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'mapel_id' => $mapel->id,
+                'nama_mapel' => $mapel->nama_mapel,
+                'kode_mapel' => $mapel->kode_mapel,
+                'jumlah_soal' => $mapel->inventory?->jumlah_soal ?? 0,
+                'tingkat_kesulitan' => $mapel->inventory?->tingkat_kesulitan,
+                'semester' => $mapel->inventory?->semester,
+                'inventory' => $mapel->inventory,
+            ],
+        ], 200);
+    }
+
+    public function storeInventory(Request $request)
+    {
+        $this->ensureTeacher();
+
+        $validated = $request->validate([
+            'mapel_id' => ['required', 'exists:mapel,id'],
+            'jumlah_soal' => ['nullable', 'integer', 'min:0'],
+            'tingkat_kesulitan' => ['nullable', 'string', 'max:50'],
+            'semester' => ['nullable', 'string', 'max:20'],
+        ]);
+
+        $realCount = $validated['jumlah_soal'] ?? PackageModel::where('mapel_id', $validated['mapel_id'])
+            ->withCount('soal')
+            ->get()
+            ->sum('soal_count');
+
+        $inventory = InventoryModel::updateOrCreate(
+            ['mapel_id' => $validated['mapel_id']],
+            [
+                'jumlah_soal' => (int) $realCount,
+                'tingkat_kesulitan' => $validated['tingkat_kesulitan'] ?? null,
+                'semester' => $validated['semester'] ?? null,
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Inventory mapel berhasil disimpan.',
+            'data' => $inventory,
         ], 200);
     }
 

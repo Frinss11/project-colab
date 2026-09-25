@@ -22,6 +22,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::post('/logout', [BankSoalApiController::class, 'logout']);
 
     Route::get('/admin/dashboard', [BankSoalApiController::class, 'adminDashboard']);
+    Route::get('/admin/inventory', [BankSoalApiController::class, 'inventory']);
+    Route::get('/admin/inventory/{mapel}', [BankSoalApiController::class, 'showInventory']);
+    Route::post('/admin/inventory', [BankSoalApiController::class, 'storeInventory']);
     Route::get('/admin/mapels', [BankSoalApiController::class, 'mapels']);
     Route::post('/admin/mapels', [BankSoalApiController::class, 'storeMapel']);
     Route::get('/admin/mapels/{mapel}', [BankSoalApiController::class, 'showMapel']);
