@@ -17,10 +17,16 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     if (Auth::check()) {
+        $role = Auth::user()->role;
+
+        if (in_array($role, ['siswa', 'student'], true)) {
+            return redirect()->route('student.dashboard');
+        }
+
         return redirect()->route('dashboard');
     }
 
-    return redirect()->route('login');
+    return view('auth.login');
 });
 
 Route::get('/view-index', function () {
