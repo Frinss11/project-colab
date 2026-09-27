@@ -96,6 +96,24 @@ it('student can register through public api endpoint without auto-login', functi
     ]);
 });
 
+it('web registration creates a student account and redirects to login without auto-login', function () {
+    $response = $this->post('/register', [
+        'name' => 'Siswa Web',
+        'email' => 'siswa.web@example.com',
+        'password' => 'password123',
+        'password_confirmation' => 'password123',
+    ]);
+
+    $response->assertRedirect('/login');
+
+    $this->assertDatabaseHas('users', [
+        'email' => 'siswa.web@example.com',
+        'role' => 'siswa',
+    ]);
+
+    expect(auth()->check())->toBeFalse();
+});
+
 it('logout revokes all user tokens so stale sessions cannot stay active', function () {
     $user = User::factory()->create([
         'role' => 'siswa',
