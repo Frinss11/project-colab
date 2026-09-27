@@ -63,21 +63,18 @@ class BankSoalApiController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
-            'role' => ['nullable', Rule::in(['siswa', 'student'])],
         ]);
 
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
-            'role' => $validated['role'] ?? 'siswa',
+            'role' => 'siswa',
         ]);
-
-        $token = $user->createToken('mobile-app')->plainTextToken;
 
         return response()->json([
             'success' => true,
-            'message' => 'Registrasi siswa berhasil.',
+            'message' => 'Registrasi berhasil. Silakan login untuk melanjutkan.',
             'data' => [
                 'user' => [
                     'id' => $user->id,
@@ -85,7 +82,6 @@ class BankSoalApiController extends Controller
                     'email' => $user->email,
                     'role' => $user->role,
                 ],
-                'token' => $token,
             ],
         ], 201);
     }

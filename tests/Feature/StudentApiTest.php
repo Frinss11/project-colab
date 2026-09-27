@@ -76,7 +76,7 @@ it('student can login, view package list, and submit answers', function () {
         ->assertJsonPath('data.jawaban_benar', 1);
 });
 
-it('student can register through public api endpoint', function () {
+it('student can register through public api endpoint without auto-login', function () {
     $response = $this->postJson('/api/register', [
         'name' => 'Siswa Baru',
         'email' => 'siswa.baru@example.com',
@@ -86,7 +86,9 @@ it('student can register through public api endpoint', function () {
 
     $response->assertCreated()
         ->assertJsonPath('success', true)
-        ->assertJsonPath('data.user.role', 'siswa');
+        ->assertJsonPath('data.user.role', 'siswa')
+        ->assertJsonMissingPath('data.token')
+        ->assertJsonPath('message', 'Registrasi berhasil. Silakan login untuk melanjutkan.');
 
     $this->assertDatabaseHas('users', [
         'email' => 'siswa.baru@example.com',
