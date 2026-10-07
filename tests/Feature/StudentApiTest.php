@@ -4,7 +4,9 @@ use App\Models\PackageModel;
 use App\Models\SoalModel;
 use App\Models\Tambah_mapelModel;
 use App\Models\User;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 
 it('student can login, view package list, and submit answers', function () {
     $user = User::factory()->create([
@@ -94,6 +96,25 @@ it('student can register through public api endpoint without auto-login', functi
         'email' => 'siswa.baru@example.com',
         'role' => 'siswa',
     ]);
+});
+
+it('api can send a password reset link to a registered user', function () {
+    Notification::fake();
+
+    $user = User::factory()->create([
+        'email' => 'reset.user@example.com',
+        'role' => 'siswa',
+    ]);
+
+    $response = $this->postJson('/api/forgot-password', [
+        'email' => $user->email,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('message', 'Link reset password telah dikirim ke email Anda.');
+
+    Notification::assertSentTo($user, ResetPassword::class);
 });
 
 it('web registration creates a student account and redirects to login without auto-login', function () {

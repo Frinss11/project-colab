@@ -9,11 +9,15 @@ use App\Models\RekapNilaiModel;
 use App\Models\SoalModel;
 use App\Models\Tambah_mapelModel;
 use App\Models\User;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Validation\ValidationException;
 
 class BankSoalApiController extends Controller
@@ -112,6 +116,60 @@ class BankSoalApiController extends Controller
     public function loginStudent(Request $request)
     {
         return $this->loginByRole($request, ['siswa', 'student']);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        $status = Password::sendResetLink($request->only('email'));
+
+        if ($status !== Password::RESET_LINK_SENT) {
+            return response()->json([
+                'success' => false,
+                'message' => __($status),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Link reset password telah dikirim ke email Anda.',
+        ], 200);
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => ['required', 'string'],
+            'email' => ['required', 'email'],
+            'password' => ['required', 'confirmed', PasswordRule::defaults()],
+        ]);
+
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function (User $user, string $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                    'remember_token' => Str::random(60),
+                ])->save();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        if ($status !== Password::PASSWORD_RESET) {
+            return response()->json([
+                'success' => false,
+                'message' => __($status),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password berhasil direset. Silakan login kembali.',
+        ], 200);
     }
 
     public function me()
@@ -255,7 +313,9 @@ class BankSoalApiController extends Controller
         $validated = $request->validate([
             'nama_mapel' => ['required', 'string', 'max:100'],
             'kode_mapel' => ['required', 'string', 'max:20', 'unique:mapel,kode_mapel'],
-            'gambar' => ['nullable', 'string'],
+            'gambar' => $request->hasFile('gambar')
+                ? ['nullable', 'image', 'max:10240']
+                : ['nullable', 'string'],
             'fase_class' => ['nullable', 'string', 'max:50'],
             'tingkat_kesulitan' => ['nullable', 'string', 'max:50'],
             'semester' => ['nullable', 'string', 'max:20'],
@@ -297,11 +357,11 @@ class BankSoalApiController extends Controller
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
+            report($e);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Gagal menambahkan mata pelajaran.',
-                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -381,9 +441,22 @@ class BankSoalApiController extends Controller
             'jawaban' => ['required', 'in:A,B,C,D,E'],
         ]);
 
-        $question = SoalModel::create($validated);
-        $package = PackageModel::withCount('soal')->findOrFail($validated['package_id']);
-        $package->update(['jumlah_butir' => (int) $package->soal_count]);
+        $question = DB::transaction(function () use ($validated) {
+            $question = SoalModel::create($validated);
+            $package = PackageModel::withCount('soal')->findOrFail($validated['package_id']);
+            $package->update(['jumlah_butir' => (int) $package->soal_count]);
+
+            $jumlahSoal = PackageModel::where('mapel_id', $package->mapel_id)
+                ->withCount('soal')
+                ->get()
+                ->sum('soal_count');
+
+            $inventory = InventoryModel::firstOrNew(['mapel_id' => $package->mapel_id]);
+            $inventory->jumlah_soal = $jumlahSoal;
+            $inventory->save();
+
+            return $question;
+        });
 
         return response()->json([
             'success' => true,
@@ -643,5 +716,68 @@ class BankSoalApiController extends Controller
     private function ensureStudent(): void
     {
         abort_unless(in_array(Auth::user()?->role, ['siswa', 'student'], true), 403, 'Akses hanya untuk siswa.');
+    }
+
+    public function loginGoogle(Request $request)
+    {
+        $idToken = $request->validate([
+            'idToken' => ['required', 'string'],
+        ])['idToken'];
+
+        $clientId = config('services.google.client_id');
+
+        if (! is_string($clientId) || $clientId === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Login Google belum dikonfigurasi.',
+            ], 503);
+        }
+
+        $client = new \Google_Client(['client_id' => $clientId]);
+        $payload = $client->verifyIdToken($idToken);
+        $email = is_array($payload) ? ($payload['email'] ?? null) : null;
+
+        if (
+            ! is_string($email)
+            || ! filter_var($email, FILTER_VALIDATE_EMAIL)
+            || ! filter_var($payload['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN)
+        ) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Token Google tidak valid atau email belum terverifikasi.',
+            ], 401);
+        }
+
+        $name = is_string($payload['name'] ?? null) && $payload['name'] !== ''
+            ? $payload['name']
+            : explode('@', $email)[0];
+
+        $user = User::where('email', $email)->first();
+
+        if (! $user) {
+            $user = User::create([
+                'name' => $name,
+                'email' => $email,
+                'password' => Hash::make(Str::random(40)),
+                'role' => 'siswa',
+            ]);
+        }
+
+        $user->tokens()->delete();
+        $token = $user->createToken('mobile-app')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Login Google berhasil.',
+            'data' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                ],
+                'token' => $token,
+            ],
+        ], 200);
     }
 }
