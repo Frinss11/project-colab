@@ -13,6 +13,7 @@ Route::post('/auth/register', [BankSoalApiController::class, 'register']);
 Route::post('/teacher/login', [BankSoalApiController::class, 'loginTeacher']);
 Route::post('/student/login', [BankSoalApiController::class, 'loginStudent']);
 Route::post('/auth/google', [BankSoalApiController::class, 'loginGoogle']);
+Route::post('/auth/google/register', [BankSoalApiController::class, 'registerGoogle']);
 Route::post('/forgot-password', [BankSoalApiController::class, 'forgotPassword']);
 Route::post('/reset-password', [BankSoalApiController::class, 'resetPassword']);
 Route::post('/auth/forgot-password', [BankSoalApiController::class, 'forgotPassword']);

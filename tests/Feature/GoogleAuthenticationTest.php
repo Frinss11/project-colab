@@ -87,3 +87,63 @@ test('mobile api login rejects an unverified Google identity', function () {
         'email' => 'mobile.student@example.com',
     ]);
 });
+
+test('mobile api Google registration creates a student and returns a Sanctum token', function () {
+    config(['services.google.client_id' => 'mobile-google-client-id']);
+
+    $verifier = Mockery::mock(GoogleIdTokenVerifier::class);
+    $verifier->shouldReceive('verify')
+        ->once()
+        ->with('google-id-token', 'mobile-google-client-id')
+        ->andReturn([
+            'sub' => 'new-google-user-456',
+            'email' => 'new.mobile.student@example.com',
+            'email_verified' => true,
+            'name' => 'New Mobile Student',
+        ]);
+    $this->app->instance(GoogleIdTokenVerifier::class, $verifier);
+
+    $response = $this->postJson('/api/auth/google/register', [
+        'id_token' => 'google-id-token',
+    ]);
+
+    $response->assertCreated()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('message', 'Registrasi Google berhasil.')
+        ->assertJsonPath('data.user.role', 'siswa')
+        ->assertJsonStructure(['data' => ['user' => ['id', 'name', 'email', 'role'], 'token']]);
+
+    $this->assertDatabaseHas('users', [
+        'email' => 'new.mobile.student@example.com',
+        'google_id' => 'new-google-user-456',
+        'role' => 'siswa',
+    ]);
+
+    expect(User::where('email', 'new.mobile.student@example.com')->firstOrFail()->tokens)->toHaveCount(1);
+});
+
+test('mobile api Google registration rejects an existing account and instructs the user to log in', function () {
+    $user = User::factory()->create([
+        'email' => 'already.registered@example.com',
+        'google_id' => 'existing-google-user',
+    ]);
+    config(['services.google.client_id' => 'mobile-google-client-id']);
+
+    $verifier = Mockery::mock(GoogleIdTokenVerifier::class);
+    $verifier->shouldReceive('verify')
+        ->once()
+        ->andReturn([
+            'sub' => 'existing-google-user',
+            'email' => $user->email,
+            'email_verified' => true,
+            'name' => $user->name,
+        ]);
+    $this->app->instance(GoogleIdTokenVerifier::class, $verifier);
+
+    $this->postJson('/api/auth/google/register', [
+        'id_token' => 'google-id-token',
+    ])->assertConflict()
+        ->assertJsonPath('success', false);
+
+    expect($user->fresh()->tokens)->toHaveCount(0);
+});

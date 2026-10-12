@@ -11,6 +11,7 @@ use App\Models\Tambah_mapelModel;
 use App\Models\User;
 use App\Services\GoogleIdTokenVerifier;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,7 @@ class BankSoalApiController extends Controller
                     'POST /api/teacher/login' => 'Login khusus guru/admin',
                     'POST /api/student/login' => 'Login khusus siswa',
                     'POST /api/auth/google' => 'Login mobile menggunakan Google ID token',
+                    'POST /api/auth/google/register' => 'Register mobile menggunakan Google ID token',
                     'GET /api/me' => 'Ambil data user yang sedang login',
                     'POST /api/logout' => 'Logout token Sanctum',
                     'GET /api/admin/dashboard' => 'Dashboard admin/guru',
@@ -722,42 +724,13 @@ class BankSoalApiController extends Controller
 
     public function loginGoogle(Request $request, GoogleIdTokenVerifier $googleIdTokenVerifier)
     {
-        $validated = $request->validate([
-            'id_token' => ['required_without:idToken', 'string'],
-            'idToken' => ['required_without:id_token', 'string'],
-        ]);
+        $identity = $this->verifiedGoogleIdentity($request, $googleIdTokenVerifier, 'Login');
 
-        $idToken = $validated['id_token'] ?? $validated['idToken'];
-
-        $clientId = config('services.google.client_id');
-
-        if (! is_string($clientId) || $clientId === '') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Login Google belum dikonfigurasi.',
-            ], 503);
+        if ($identity instanceof JsonResponse) {
+            return $identity;
         }
 
-        $payload = $googleIdTokenVerifier->verify($idToken, $clientId);
-        $email = is_array($payload) ? ($payload['email'] ?? null) : null;
-        $googleId = is_array($payload) ? ($payload['sub'] ?? null) : null;
-
-        if (
-            ! is_string($googleId)
-            || $googleId === ''
-            || ! is_string($email)
-            || ! filter_var($email, FILTER_VALIDATE_EMAIL)
-            || ! filter_var($payload['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN)
-        ) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Token Google tidak valid atau email belum terverifikasi.',
-            ], 401);
-        }
-
-        $name = is_string($payload['name'] ?? null) && $payload['name'] !== ''
-            ? $payload['name']
-            : explode('@', $email)[0];
+        ['google_id' => $googleId, 'email' => $email, 'name' => $name] = $identity;
 
         $user = User::where('google_id', $googleId)->first()
             ?? User::where('email', $email)->first();
@@ -799,5 +772,102 @@ class BankSoalApiController extends Controller
                 'token' => $token,
             ],
         ], 200);
+    }
+
+    public function registerGoogle(Request $request, GoogleIdTokenVerifier $googleIdTokenVerifier)
+    {
+        $identity = $this->verifiedGoogleIdentity($request, $googleIdTokenVerifier, 'Registrasi');
+
+        if ($identity instanceof JsonResponse) {
+            return $identity;
+        }
+
+        if (User::where('google_id', $identity['google_id'])
+            ->orWhere('email', $identity['email'])
+            ->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Akun dengan Google ini sudah terdaftar. Silakan login menggunakan Google.',
+            ], 409);
+        }
+
+        $user = User::create([
+            'name' => $identity['name'],
+            'email' => $identity['email'],
+            'password' => Hash::make(Str::random(40)),
+            'role' => 'siswa',
+        ]);
+
+        $user->forceFill([
+            'google_id' => $identity['google_id'],
+            'email_verified_at' => now(),
+        ])->save();
+
+        $token = $user->createToken('mobile-app')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Registrasi Google berhasil.',
+            'data' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                ],
+                'token' => $token,
+            ],
+        ], 201);
+    }
+
+    /**
+     * @return array{google_id: string, email: string, name: string}|JsonResponse
+     */
+    private function verifiedGoogleIdentity(
+        Request $request,
+        GoogleIdTokenVerifier $googleIdTokenVerifier,
+        string $action
+    ): array|JsonResponse {
+        $validated = $request->validate([
+            'id_token' => ['required_without:idToken', 'string'],
+            'idToken' => ['required_without:id_token', 'string'],
+        ]);
+
+        $clientId = config('services.google.client_id');
+
+        if (! is_string($clientId) || $clientId === '') {
+            return response()->json([
+                'success' => false,
+                'message' => "{$action} Google belum dikonfigurasi.",
+            ], 503);
+        }
+
+        $idToken = $validated['id_token'] ?? $validated['idToken'];
+        $payload = $googleIdTokenVerifier->verify($idToken, $clientId);
+        $email = is_array($payload) ? ($payload['email'] ?? null) : null;
+        $googleId = is_array($payload) ? ($payload['sub'] ?? null) : null;
+
+        if (
+            ! is_string($googleId)
+            || $googleId === ''
+            || ! is_string($email)
+            || ! filter_var($email, FILTER_VALIDATE_EMAIL)
+            || ! filter_var($payload['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN)
+        ) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Token Google tidak valid atau email belum terverifikasi.',
+            ], 401);
+        }
+
+        $name = is_string($payload['name'] ?? null) && $payload['name'] !== ''
+            ? $payload['name']
+            : explode('@', $email)[0];
+
+        return [
+            'google_id' => $googleId,
+            'email' => $email,
+            'name' => $name,
+        ];
     }
 }

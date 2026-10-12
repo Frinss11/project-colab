@@ -9,15 +9,18 @@
 </head>
 
 <body class="bg-gray-50 text-gray-800 antialiased">
-    <nav class="bg-white fixed w-full z-50 top-0 border-b border-gray-200">
-        <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-            <a href="{{ route('mapel.show', $package->mapel_id) }}" class="text-sm font-semibold text-blue-600 hover:underline">
-                &larr; Kembali ke {{ $package->mapel->nama_mapel ?? 'Mata Pelajaran' }}
+    <nav class="fixed inset-x-0 top-0 z-50 border-b border-gray-200 bg-white">
+        <div class="mx-auto flex max-w-screen-2xl items-center px-4 py-2.5">
+            <a href="{{ route('mapel.show', $package->mapel_id) }}" class="flex items-center space-x-2.5">
+                <div class="flex items-center justify-center rounded-lg bg-blue-600 p-1.5 text-white">
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </div>
+                <span class="self-center whitespace-nowrap text-sm font-bold text-gray-900">
+                    Kembali ke {{ $package->mapel->nama_mapel ?? 'Mata Pelajaran' }}
+                </span>
             </a>
-            <form method="POST" action="{{ route('logout') }}">
-                @csrf
-                <button type="submit" class="text-xs font-semibold text-gray-500 hover:text-gray-900">Keluar</button>
-            </form>
         </div>
     </nav>
 
