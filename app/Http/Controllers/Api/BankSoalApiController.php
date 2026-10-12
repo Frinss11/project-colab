@@ -9,6 +9,7 @@ use App\Models\RekapNilaiModel;
 use App\Models\SoalModel;
 use App\Models\Tambah_mapelModel;
 use App\Models\User;
+use App\Services\GoogleIdTokenVerifier;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -37,6 +38,7 @@ class BankSoalApiController extends Controller
                     'POST /api/auth/login' => 'Alias login umum',
                     'POST /api/teacher/login' => 'Login khusus guru/admin',
                     'POST /api/student/login' => 'Login khusus siswa',
+                    'POST /api/auth/google' => 'Login mobile menggunakan Google ID token',
                     'GET /api/me' => 'Ambil data user yang sedang login',
                     'POST /api/logout' => 'Logout token Sanctum',
                     'GET /api/admin/dashboard' => 'Dashboard admin/guru',
@@ -718,11 +720,14 @@ class BankSoalApiController extends Controller
         abort_unless(in_array(Auth::user()?->role, ['siswa', 'student'], true), 403, 'Akses hanya untuk siswa.');
     }
 
-    public function loginGoogle(Request $request)
+    public function loginGoogle(Request $request, GoogleIdTokenVerifier $googleIdTokenVerifier)
     {
-        $idToken = $request->validate([
-            'idToken' => ['required', 'string'],
-        ])['idToken'];
+        $validated = $request->validate([
+            'id_token' => ['required_without:idToken', 'string'],
+            'idToken' => ['required_without:id_token', 'string'],
+        ]);
+
+        $idToken = $validated['id_token'] ?? $validated['idToken'];
 
         $clientId = config('services.google.client_id');
 
@@ -733,12 +738,14 @@ class BankSoalApiController extends Controller
             ], 503);
         }
 
-        $client = new \Google_Client(['client_id' => $clientId]);
-        $payload = $client->verifyIdToken($idToken);
+        $payload = $googleIdTokenVerifier->verify($idToken, $clientId);
         $email = is_array($payload) ? ($payload['email'] ?? null) : null;
+        $googleId = is_array($payload) ? ($payload['sub'] ?? null) : null;
 
         if (
-            ! is_string($email)
+            ! is_string($googleId)
+            || $googleId === ''
+            || ! is_string($email)
             || ! filter_var($email, FILTER_VALIDATE_EMAIL)
             || ! filter_var($payload['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN)
         ) {
@@ -752,7 +759,15 @@ class BankSoalApiController extends Controller
             ? $payload['name']
             : explode('@', $email)[0];
 
-        $user = User::where('email', $email)->first();
+        $user = User::where('google_id', $googleId)->first()
+            ?? User::where('email', $email)->first();
+
+        if ($user && $user->google_id && ! hash_equals($user->google_id, $googleId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email ini sudah terhubung ke akun Google lain.',
+            ], 409);
+        }
 
         if (! $user) {
             $user = User::create([
@@ -762,6 +777,11 @@ class BankSoalApiController extends Controller
                 'role' => 'siswa',
             ]);
         }
+
+        $user->forceFill([
+            'google_id' => $googleId,
+            'email_verified_at' => $user->email_verified_at ?: now(),
+        ])->save();
 
         $user->tokens()->delete();
         $token = $user->createToken('mobile-app')->plainTextToken;
